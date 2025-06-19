@@ -2,7 +2,7 @@ from typing import Tuple
 from typing import Union, Callable, List
 
 import numpy as np
-from numpy import sign, sum as np_sum, concatenate, ndarray, transpose, broadcast_to, swapaxes, array, copy
+from numpy import sign, sum as np_sum, concatenate, ndarray, transpose, broadcast_to, swapaxes, array, copy, linspace
 from numpy.random import default_rng, RandomState
 
 from .base import Simulation, NoisyLTFArray, LTFArray, XORPUF
@@ -104,23 +104,48 @@ class XORArbiterPUF(NoisyLTFArray):
         cls.att(sub_challenges)
         return transpose(broadcast_to(transpose(sub_challenges, axes=(1, 0, 2)), (k, N, n)), axes=(1, 0, 2))
 
-    def __init__(self, n: int, k: int, seed: int = None, transform: Union[Callable, str] = None,
-                 noisiness: float = 0) -> None:
+    def __init__(
+        self,
+        n: int,
+        k: int,
+        seed: int = None,
+        transform: Union[Callable, str] = None,
+        noisiness: float = 0,
+        weight_mu: float = 0.0,
+        weight_sigma: float = 1.0,
+        bias_mu: float = 0.0,
+        bias_sigma: float = 0.0,
+        gradient: float = 0.0,
+    ) -> None:
+        """Create an XOR Arbiter PUF simulation.
+
+        Parameters allow modeling non-ideal PUF instances by choosing custom
+        distributions for the intrinsic weights and bias as well as a linear
+        gradient across the stages.
+
+        :param weight_mu: Mean of the normal distribution used for the weights.
+        :param weight_sigma: Standard deviation of the weight distribution.
+        :param bias_mu: Mean of the bias distribution for each chain.
+        :param bias_sigma: Standard deviation of the bias distribution.
+        :param gradient: Linear gradient added to the weights.
+        """
         if seed is None:
             seed = 'default'
         weight_rng = default_rng(self.seed(f'xor arbiter puf {seed} weights'))
         noise_seed = self.seed(f'xor arbiter puf {seed} noise')
+
+        weights = weight_rng.normal(loc=weight_mu, scale=weight_sigma, size=(k, n))
+        if gradient:
+            weights += linspace(-0.5, 0.5, n) * gradient
+
         super().__init__(
-            weight_array=np.concatenate((
-                weight_rng.normal(loc=0, scale=.5, size=(k, 1)),
-                weight_rng.normal(loc=0, scale=1, size=(k, n - 1)),
-            ), axis=1),
-            bias=weight_rng.normal(loc=0, scale=.5, size=(k,)),
+            weight_array=weights,
+            bias=weight_rng.normal(loc=bias_mu, scale=bias_sigma, size=(k,)),
             transform=transform or self.transform_atf,
             combiner=self.combiner_xor,
             sigma_noise=self.sigma_noise_from_random_weights(
                 n=n,
-                sigma_weight=1,
+                sigma_weight=weight_sigma,
                 noisiness=noisiness,
             ),
             seed=noise_seed,
@@ -146,8 +171,18 @@ class FeedForwardArbiterPUF(NoisyLTFArray):
     Feed-Forward Arbiter PUF [GLCDD04]_. Simulation based on the additive delay model.
     """
 
-    def __init__(self, n: int, ff: List[Tuple[int, int]], seed: int = None,
-                 noisiness: float = 0) -> None:
+    def __init__(
+        self,
+        n: int,
+        ff: List[Tuple[int, int]],
+        seed: int = None,
+        noisiness: float = 0,
+        weight_mu: float = 0.0,
+        weight_sigma: float = 1.0,
+        bias_mu: float = 0.0,
+        bias_sigma: float = 0.0,
+        gradient: float = 0.0,
+    ) -> None:
         """
         Initialize a Feed-Forward Arbiter PUF Simulation.
 
@@ -165,6 +200,12 @@ class FeedForwardArbiterPUF(NoisyLTFArray):
 
         :param noisiness: Noise-level of the simulation.
 
+        :param weight_mu: Mean of the normal distribution used for the weights.
+        :param weight_sigma: Standard deviation of the weight distribution.
+        :param bias_mu: Mean of the bias distribution for this PUF.
+        :param bias_sigma: Standard deviation of the bias distribution.
+        :param gradient: Linear gradient added to the weights.
+
         """
         if seed is None:
             seed = 'default'
@@ -175,7 +216,19 @@ class FeedForwardArbiterPUF(NoisyLTFArray):
         self.noisiness = noisiness
 
         super().__init__(
-            weight_array=self.normal_weights(n=n + len(ff), k=1, seed=weight_seed),
+            weight_array=self.normal_weights(
+                n=n + len(ff),
+                k=1,
+                seed=weight_seed,
+                mu=weight_mu,
+                sigma=weight_sigma,
+                gradient=gradient,
+            ),
+            bias=default_rng(self.seed(f'FeedForwardArbiterPUF {seed} bias')).normal(
+                loc=bias_mu,
+                scale=bias_sigma,
+                size=(1,),
+            ),
             # TODO the weights used here are slightly inaccurate, but it's unclear to me how the model exhibited
             #  in ia.cr/2021/555, Corollary 1 can be extended to cover FF PUFs. Given how marginal the difference
             #  is, it is reasonable to assume that this won't make significant differences to the success of modeling
@@ -184,7 +237,7 @@ class FeedForwardArbiterPUF(NoisyLTFArray):
             combiner=self.combiner_xor,
             sigma_noise=self.sigma_noise_from_random_weights(
                 n=n + len(ff),
-                sigma_weight=1,
+                sigma_weight=weight_sigma,
                 noisiness=noisiness,
             ),
             seed=noise_seed,
@@ -253,8 +306,19 @@ class XORFeedForwardArbiterPUF(XORPUF):
     XOR Feed-Forward Arbiter PUF [GLCDD04]_. Simulation based on the additive delay model.
     """
 
-    def __init__(self, n: int, k: int, ff: Union[List[List[Tuple[int, int]]], List[Tuple[int, int]]], seed: int = None,
-                 noisiness: float = 0) -> None:
+    def __init__(
+        self,
+        n: int,
+        k: int,
+        ff: Union[List[List[Tuple[int, int]]], List[Tuple[int, int]]],
+        seed: int = None,
+        noisiness: float = 0,
+        weight_mu: float = 0.0,
+        weight_sigma: float = 1.0,
+        bias_mu: float = 0.0,
+        bias_sigma: float = 0.0,
+        gradient: float = 0.0,
+    ) -> None:
         """
         Initialize an XOR Feed-Forward Arbiter PUF Simulation.
 
@@ -270,6 +334,13 @@ class XORFeedForwardArbiterPUF(XORPUF):
         :param seed: Seed for random weight generation.
 
         :param noisiness: Noise-level of the simulation.
+
+        :param weight_mu: Mean of the normal distribution used for the weights.
+        :param weight_sigma: Standard deviation of the weight distribution.
+        :param bias_mu: Mean of the bias distribution for each chain.
+        :param bias_sigma: Standard deviation of the bias distribution.
+        :param gradient: Linear gradient added to the weights to emulate
+            implementation-induced delay bias.
         """
         if seed is None:
             seed = 'default'
@@ -285,6 +356,11 @@ class XORFeedForwardArbiterPUF(XORPUF):
                 ff=ff[l],
                 seed=self.seed(f"XORFeedForwardArbiterPUF {seed} {l}"),
                 noisiness=noisiness,
+                weight_mu=weight_mu,
+                weight_sigma=weight_sigma,
+                bias_mu=bias_mu,
+                bias_sigma=bias_sigma,
+                gradient=gradient,
             )
             for l in range(k)
         ]
@@ -294,8 +370,31 @@ class XORFeedForwardArbiterPUF(XORPUF):
 
 class ArbiterPUF(XORArbiterPUF):
 
-    def __init__(self, n: int, seed: int = None, transform: Union[Callable, str] = None, noisiness: float = 0) -> None:
-        super().__init__(n, 1, seed, transform, noisiness)
+    def __init__(
+        self,
+        n: int,
+        seed: int = None,
+        transform: Union[Callable, str] = None,
+        noisiness: float = 0,
+        weight_mu: float = 0.0,
+        weight_sigma: float = 1.0,
+        bias_mu: float = 0.0,
+        bias_sigma: float = 0.0,
+        gradient: float = 0.0,
+    ) -> None:
+        """Instantiate a single-chain Arbiter PUF."""
+        super().__init__(
+            n,
+            1,
+            seed,
+            transform,
+            noisiness,
+            weight_mu=weight_mu,
+            weight_sigma=weight_sigma,
+            bias_mu=bias_mu,
+            bias_sigma=bias_sigma,
+            gradient=gradient,
+        )
 
 
 class LightweightSecurePUF(XORArbiterPUF):

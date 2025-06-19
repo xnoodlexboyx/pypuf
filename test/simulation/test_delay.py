@@ -169,3 +169,20 @@ def test_ff_many_loops() -> None:
     assert set(np.unique(puf.eval(pypuf.io.random_inputs(n=puf.challenge_length, N=100, seed=1)))) == {-1, 1}
     assert -.5 < pypuf.metrics.bias(puf, seed=1) < .5
     assert pypuf.metrics.bias(puf, seed=1) != 0
+
+
+def test_bias_parameter_effect() -> None:
+    puf = pypuf.simulation.ArbiterPUF(n=8, seed=1, bias_mu=2.0, bias_sigma=0)
+    assert puf.weight_array[0, -1] == 2.0
+
+
+def test_weight_gradient() -> None:
+    puf = pypuf.simulation.ArbiterPUF(
+        n=4,
+        seed=1,
+        weight_mu=0,
+        weight_sigma=0,
+        gradient=1.0,
+    )
+    expected = np.linspace(-0.5, 0.5, 4)
+    assert np.allclose(puf.weight_array[0, :-1], expected)
