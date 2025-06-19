@@ -6,7 +6,7 @@ from typing import Union, Callable
 
 from numpy import prod, sign, sqrt, append, empty, ceil, \
     ones, zeros, reshape, einsum, int8, \
-    concatenate, ndarray, transpose, broadcast_to, array
+    concatenate, ndarray, transpose, broadcast_to, array, linspace
 from numpy.random import default_rng
 
 
@@ -281,14 +281,28 @@ class LTFArray(Simulation):
             sub_challenges[:, :, i] *= sub_challenges[:, :, i + 1]
 
     @classmethod
-    def normal_weights(cls, n: int, k: int, seed: int, mu: float = 0, sigma: float = 1) -> ndarray:
+    def normal_weights(
+        cls,
+        n: int,
+        k: int,
+        seed: int,
+        mu: float = 0,
+        sigma: float = 1,
+        gradient: float = 0.0,
+    ) -> ndarray:
+        """Return normally distributed weights.
+
+        The weights are drawn from a normal distribution with mean ``mu`` and
+        standard deviation ``sigma``.  If ``gradient`` is given, the mean of the
+        distribution is shifted linearly along the challenge bits to emulate a
+        manufacturing gradient often observed on real hardware.
         """
-        Returns weights for an array of k LTFs of size n each.
-        The weights are drawn from a normal distribution with given
-        mean and std. deviation, if parameters are omitted, the
-        standard normal distribution is used.
-        """
-        return default_rng(seed).normal(loc=mu, scale=sigma, size=(k, n))
+        rng = default_rng(seed)
+        weights = rng.normal(loc=mu, scale=sigma, size=(k, n))
+        if gradient:
+            offsets = linspace(-0.5, 0.5, n) * gradient
+            weights += offsets
+        return weights
 
     def __init__(self, weight_array: ndarray, transform: Union[str, Callable], combiner: Union[str, Callable] = 'xor',
                  bias: ndarray = None) -> None:

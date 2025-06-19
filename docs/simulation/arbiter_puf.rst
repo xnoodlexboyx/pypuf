@@ -46,6 +46,16 @@ array([-1, -1,  1], dtype=int8)
 array([-1, -1, -1], dtype=int8)
 
 In above example, note that the response to the `same` third challenge evaluates to a different response due to noise.
+
+Modeling Non-Ideal Bias and Weights
+-----------------------------------
+
+Real-world implementations often exhibit systematic bias and variations across
+the delay stages.  The constructors of :class:`~pypuf.simulation.ArbiterPUF` and
+its derivatives therefore accept additional parameters ``bias_mean``,
+``bias_stddev``, ``weight_mean`` and ``weight_stddev`` to control the
+distribution of the intrinsic delays.  A linear ``gradient`` can be specified to
+model manufacturing effects along the chain.
 This is reproducible with new instantiations using the same seed.
 
 XOR Arbiter PUF
